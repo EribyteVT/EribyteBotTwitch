@@ -3,51 +3,68 @@ from twitchAPI.oauth import UserAuthenticationStorageHelper
 from twitchAPI.type import AuthScope, ChatEvent
 from twitchAPI.helper import first
 from twitchAPI.chat import Chat, EventData, ChatMessage, ChatSub, ChatCommand
+from twitchAPI.object.eventsub import ChannelPointsCustomRewardRedemptionAddEvent
+from twitchAPI.eventsub.websocket import EventSubWebsocket
 import asyncio
 from CrudWrapper import CrudWrapper
 import random
 from Secrets import * 
 
+xp_dict = {"ec9ed023-1aed-4098-b955-73c249ab4567":12,
+           "74a435cb-e067-41ac-ba6e-dddd88b11d86":84,
+           "648833a2-d3f5-4c3f-8644-b9face6ad329":36}
+
+reward_xps = list(xp_dict.keys())
+
 crudWrapper = CrudWrapper("LOCAL")
 twitch = None
 
+chat = None
+
 async def on_ready(ready_event: EventData):
     await ready_event.chat.join_room("EribyteVT")
-    # you can do other bot initialization things in here
+    
 
-async def on_message(msg: ChatMessage):
-    id = msg.user.id
-
+async def add_xp_handler(id,xp_to_add, name):
     data = crudWrapper.getAssociatedFromTwitch(id)
 
     #not in db at all
     if(data == None or data == [] or data[0] == None):
         data = [crudWrapper.getDataFromTwitchdId(id)]
 
-    twitch = None
-
     total_xp = 0
 
     for account in data:
-        if(account['serviceName'] == 'twitch'):
-            twitch = account
         total_xp += account['xp']    
 
     levelBefore = crudWrapper.getLevelFromXp(total_xp)
 
     #if new account or time between messages is enuf, add xp
-    if(twitch['lastMessageXp']==None or crudWrapper.enoughTime(twitch['lastMessageXp'])):
-        xp_awarded_amount = random.randint(1,5)
-        data = crudWrapper.addXpbyTwitchId(xp_awarded_amount,id,True)
-        total_xp += xp_awarded_amount
+    data = crudWrapper.addXpbyTwitchId(xp_to_add,id,True)
+    total_xp += xp_to_add
 
     levelAfter = crudWrapper.getLevelFromXp(total_xp)
         
     if(levelAfter > levelBefore):
-        await msg.chat.send_message("eribytevt",f"Congratulations to @{msg.user.name} for reaching level {levelAfter}!!!!")
+        await chat.send_message("eribytevt",f"Congratulations to @{name} for reaching level {levelAfter}!!!!")
+
+
+async def on_message(msg: ChatMessage):
+    id = msg.user.id
+
+    data = crudWrapper.getDataFromTwitchdId(id)
+
+    name  = msg.user.name 
+
+    #if new account or time between messages is enuf, add xp
+    if(data['lastMessageXp']==None or crudWrapper.enoughTime(data['lastMessageXp'])):
+        xp_awarded_amount = random.randint(1,5)
+        add_xp_handler(id,xp_awarded_amount,name)
+
+    
 
 async def ping(cmd: ChatCommand):
-    await cmd.reply("!discord")
+    await cmd.reply("Pong!")
 
 async def getLevel(cmd: ChatCommand):
     id = cmd.user.id
@@ -70,14 +87,38 @@ async def raid_shoutout(raid_event: dict):
     
     await twitch.send_a_shoutout("946740776",user_id,"1004092875")
 
+async def handle_xp(data: ChannelPointsCustomRewardRedemptionAddEvent):
+    data = data.to_dict()
+    id = data["event"]['reward']['id']
+
+    user_id = data['event']['user_id']
+
+    user_name = data['event']['user_name']
+
+    if(id in reward_xps):
+        bonus_xp = xp_dict[id]
+    else:
+        bonus_xp = data["event"]["reward"]["cost"]//150
+
+    await add_xp_handler(user_id,bonus_xp,user_name)
+    
+    name = data['event']['reward']['title']
+
+
+
+
+    print(f"{name}:{id}")
+
+
 async def run():
-    global twitch
+    global twitch, chat
     TARGET_SCOPES = [AuthScope.MODERATOR_READ_FOLLOWERS,AuthScope.CHANNEL_MANAGE_REDEMPTIONS,AuthScope.USER_READ_SUBSCRIPTIONS,AuthScope.MODERATOR_READ_CHATTERS,AuthScope.MODERATOR_MANAGE_SHOUTOUTS,AuthScope.CHAT_READ,AuthScope.CHANNEL_MANAGE_RAIDS,AuthScope.MODERATOR_MANAGE_SHOUTOUTS,
-                     AuthScope.CHAT_EDIT,AuthScope.MODERATOR_MANAGE_SHOUTOUTS]
+                     AuthScope.CHAT_EDIT,AuthScope.MODERATOR_MANAGE_SHOUTOUTS,AuthScope.CHANNEL_READ_REDEMPTIONS]
 
     twitch = await Twitch(APP_ID, APP_SECRET)
     helper = UserAuthenticationStorageHelper(twitch, TARGET_SCOPES)
     await helper.bind()
+
 
     chat = await Chat(twitch)
 
@@ -89,6 +130,18 @@ async def run():
     chat.register_command('getLevel', getLevel)
 
     chat.start()
+
+    twitchChannel = await Twitch(APP_ID, APP_SECRET)
+    helperChannel = UserAuthenticationStorageHelper(twitchChannel, TARGET_SCOPES,"Eri-Token.json")
+    await helperChannel.bind()
+
+    eventsub = EventSubWebsocket(twitchChannel)
+    eventsub.start()
+
+    user = await first(twitchChannel.get_users())
+    print(user.id)
+
+    await eventsub.listen_channel_points_custom_reward_redemption_add(user.id, callback=handle_xp)
 
     
 
