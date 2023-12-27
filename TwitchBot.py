@@ -90,11 +90,6 @@ async def run():
 
     chat.start()
 
-    try:
-        input('press ENTER to stop\n')
-    finally:
-        # now we can close the chat bot and the twitch api client
-        chat.stop()
-        await twitch.close()
+    
 
 asyncio.run(run())
