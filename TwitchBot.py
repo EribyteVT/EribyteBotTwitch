@@ -18,14 +18,13 @@ reward_xps = list(xp_dict.keys())
 
 crudWrapper = CrudWrapper("LOCAL")
 twitch = None
-
 chat = None
 
 async def on_ready(ready_event: EventData):
     await ready_event.chat.join_room("EribyteVT")
     
 
-async def add_xp_handler(id,xp_to_add, name):
+async def add_xp_handler(id,xp_to_add, name, update):
     data = crudWrapper.getAssociatedFromTwitch(id)
 
     #not in db at all
@@ -40,7 +39,7 @@ async def add_xp_handler(id,xp_to_add, name):
     levelBefore = crudWrapper.getLevelFromXp(total_xp)
 
     #if new account or time between messages is enuf, add xp
-    data = crudWrapper.addXpbyTwitchId(xp_to_add,id,True)
+    data = crudWrapper.addXpbyTwitchId(xp_to_add,id,update)
     total_xp += xp_to_add
 
     levelAfter = crudWrapper.getLevelFromXp(total_xp)
@@ -59,7 +58,7 @@ async def on_message(msg: ChatMessage):
     #if new account or time between messages is enuf, add xp
     if(data['lastMessageXp']==None or crudWrapper.enoughTime(data['lastMessageXp'])):
         xp_awarded_amount = random.randint(1,5)
-        add_xp_handler(id,xp_awarded_amount,name)
+        await add_xp_handler(id,xp_awarded_amount,name,True)
 
     
 
@@ -100,7 +99,7 @@ async def handle_xp(data: ChannelPointsCustomRewardRedemptionAddEvent):
     else:
         bonus_xp = data["event"]["reward"]["cost"]//150
 
-    await add_xp_handler(user_id,bonus_xp,user_name)
+    await add_xp_handler(user_id,bonus_xp,user_name,False)
     
     name = data['event']['reward']['title']
 
