@@ -58,6 +58,8 @@ async def on_message(msg: ChatMessage):
     #if new account or time between messages is enuf, add xp
     if(data['lastMessageXp']==None or crudWrapper.enoughTime(data['lastMessageXp'])):
         xp_awarded_amount = random.randint(1,5)
+        if(data['xp'] == 0):
+            xp_awarded_amount = 3
         await add_xp_handler(id,xp_awarded_amount,name,True)
 
     
